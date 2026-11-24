@@ -1,0 +1,824 @@
+```html
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kasir POS Mini</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen antialiased pb-14">
+
+  <!-- Toast Notifikasi -->
+  <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-xs w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <!-- Modal Konfirmasi Hapus 1 Item Riwayat -->
+  <div id="deleteItemModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 border border-slate-200">
+      <div class="flex items-center gap-2.5 mb-2">
+        <div class="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </div>
+        <h3 id="deleteItemTitle" class="text-base font-bold text-slate-900">Hapus Transaksi Ini?</h3>
+      </div>
+      <p id="deleteItemDesc" class="text-xs text-slate-600 leading-relaxed mb-5">
+        Hanya transaksi ini yang dihapus. Saldo dan transaksi lainnya tetap aman.
+      </p>
+      <div class="flex items-center justify-end gap-2.5">
+        <button type="button" onclick="tutupModalHapusItem()" class="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
+          Batal
+        </button>
+        <button type="button" onclick="konfirmasiHapusItem()" class="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 transition">
+          Ya, Hapus Transaksi
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Konfirmasi Reset Shift / Ganti Hari -->
+  <div id="resetModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 border border-slate-200">
+      <div class="flex items-center gap-2.5 mb-2">
+        <div class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <h3 class="text-base font-bold text-slate-900">Reset Shift / Ganti Hari?</h3>
+      </div>
+      <p class="text-xs text-slate-600 leading-relaxed mb-5">
+        Seluruh modal, saldo, jumlah transaksi, dan riwayat shift ini akan dikosongkan ke 0. Pastikan Anda sudah Export CSV jika perlu.
+      </p>
+      <div class="flex items-center justify-end gap-2.5">
+        <button type="button" onclick="tutupModalReset()" class="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
+          Batal
+        </button>
+        <button type="button" onclick="konfirmasiResetHarian()" class="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 transition">
+          Ya, Reset Shift
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header Ringkas -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+          Rp
+        </div>
+        <h1 class="text-base font-bold text-slate-900">Kasir POS</h1>
+      </div>
+      <span id="tanggalHariIni" class="text-xs font-medium text-slate-500"></span>
+    </div>
+  </header>
+
+  <!-- Konten Utama -->
+  <main class="max-w-3xl mx-auto px-4 pt-5 space-y-4">
+
+    <!-- 1. TOTAL UANG REAL-TIME -->
+    <section class="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-2xl p-5 sm:p-6 text-white shadow-lg shadow-indigo-200/70">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-bold uppercase tracking-wider text-indigo-100">
+          Total Uang Real-Time
+        </span>
+        <span class="text-[11px] font-medium text-indigo-100 bg-white/15 px-2.5 py-0.5 rounded-full">
+          Cash di Laci
+        </span>
+      </div>
+      <div id="displayTotalCash" class="text-3xl sm:text-4xl font-extrabold font-mono tracking-tight mt-2">
+        Rp 0
+      </div>
+    </section>
+
+    <!-- 2. INPUT TRANSAKSI -->
+    <section class="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs">
+      <form id="formTransaksi" onsubmit="prosesSubmitTransaksi(event)" class="space-y-3.5">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          
+          <!-- Uang Masuk -->
+          <div>
+            <label for="inputUangMasuk" class="block text-xs font-bold text-emerald-700 mb-1">
+              Uang Masuk
+            </label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-xs font-bold text-emerald-600">Rp</span>
+              <input
+                type="text"
+                inputmode="numeric"
+                id="inputUangMasuk"
+                placeholder="0"
+                oninput="formatRibuanInput(this)"
+                class="w-full pl-9 pr-3 py-2.5 rounded-xl bg-emerald-50/40 border border-emerald-200 font-mono text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+              />
+            </div>
+          </div>
+
+          <!-- Uang Keluar -->
+          <div>
+            <label for="inputUangKeluar" class="block text-xs font-bold text-rose-700 mb-1">
+              Uang Keluar
+            </label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-xs font-bold text-rose-600">Rp</span>
+              <input
+                type="text"
+                inputmode="numeric"
+                id="inputUangKeluar"
+                placeholder="0"
+                oninput="formatRibuanInput(this)"
+                class="w-full pl-9 pr-3 py-2.5 rounded-xl bg-rose-50/40 border border-rose-200 font-mono text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white transition"
+              />
+            </div>
+          </div>
+
+          <!-- Cashless -->
+          <div>
+            <label for="inputCashless" class="block text-xs font-bold text-sky-700 mb-1">
+              Cashless
+            </label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-xs font-bold text-sky-600">Rp</span>
+              <input
+                type="text"
+                inputmode="numeric"
+                id="inputCashless"
+                placeholder="0"
+                oninput="formatRibuanInput(this)"
+                class="w-full pl-9 pr-3 py-2.5 rounded-xl bg-sky-50/40 border border-sky-200 font-mono text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition"
+              />
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Catatan & Tombol Submit -->
+        <div class="flex flex-col sm:flex-row gap-2.5 pt-0.5">
+          <input
+            type="text"
+            id="inputKeterangan"
+            placeholder="Catatan (opsional)..."
+            class="sm:w-1/2 px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+          />
+          <button
+            type="submit"
+            id="btnSubmit"
+            class="sm:w-1/2 py-2.5 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold text-sm sm:text-base shadow-sm flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+            </svg>
+            <span>SUBMIT</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 3. JUMLAH TRANSAKSI & JUMLAH TRX CASHLESS -->
+    <section class="grid grid-cols-2 gap-3 sm:gap-4">
+      <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
+        <span class="text-xs font-semibold text-slate-500 block">Jumlah Transaksi</span>
+        <div class="flex items-baseline gap-1.5 mt-1">
+          <span id="displayTotalTrx" class="text-2xl sm:text-3xl font-extrabold font-mono text-slate-900">0</span>
+          <span class="text-xs font-medium text-slate-400">trx</span>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
+        <span class="text-xs font-semibold text-slate-500 block">Jumlah Trx Cashless</span>
+        <div id="displayTotalCashless" class="text-xl sm:text-3xl font-extrabold font-mono text-sky-700 mt-1 truncate">
+          Rp 0
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. MODAL AWAL -->
+    <section class="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="flex items-center gap-3 flex-1">
+        <span class="text-xs font-bold text-slate-700 shrink-0">Modal Awal</span>
+        <div class="relative flex-1 max-w-xs">
+          <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-xs font-bold text-slate-400">Rp</span>
+          <input
+            type="text"
+            inputmode="numeric"
+            id="inputModal"
+            placeholder="0"
+            oninput="formatRibuanInput(this)"
+            class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 font-mono text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-500 transition"
+          />
+        </div>
+      </div>
+
+      <button
+        type="button"
+        id="btnKunciModal"
+        onclick="toggleKunciModal()"
+        class="px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition bg-slate-800 hover:bg-slate-900 text-white shrink-0"
+      >
+        <span id="textKunciModal">Kunci Modal</span>
+      </button>
+    </section>
+
+    <!-- 5. RIWAYAT TRANSAKSI (HAPUS TERAKHIR & HAPUS PER ITEM) -->
+    <section class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div class="px-4 py-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 class="text-sm font-bold text-slate-900">Riwayat Transaksi</h2>
+          <p class="text-[11px] text-slate-400">Hapus transaksi tertentu jika salah input tanpa mereset data lain</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Tombol Cepat Hapus Transaksi Terakhir -->
+          <button
+            type="button"
+            id="btnHapusTerakhir"
+            onclick="mintaHapusTerakhir()"
+            disabled
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
+            <span>Hapus Terakhir</span>
+          </button>
+
+          <!-- Tombol Export CSV -->
+          <button
+            type="button"
+            onclick="eksporCSV()"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>Export CSV</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
+              <th class="py-2.5 px-3">No</th>
+              <th class="py-2.5 px-3">Waktu</th>
+              <th class="py-2.5 px-3">Keterangan</th>
+              <th class="py-2.5 px-3 text-right">Masuk</th>
+              <th class="py-2.5 px-3 text-right">Keluar</th>
+              <th class="py-2.5 px-3 text-right">Cashless</th>
+              <th class="py-2.5 px-3 text-center">Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="tabelRiwayatBody" class="divide-y divide-slate-100 text-xs sm:text-sm">
+            <tr>
+              <td colspan="7" class="py-8 px-4 text-center text-slate-400 text-xs">
+                Belum ada riwayat transaksi.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 6. RESET SHIFT / GANTI HARI (TERKUNCI SECARA DEFAULT) -->
+    <section class="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <button
+          type="button"
+          id="btnToggleKunciReset"
+          onclick="toggleKunciReset()"
+          class="px-3.5 py-2.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300 shrink-0"
+        >
+          <svg id="iconKunciReset" class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <span id="textKunciReset">Terkunci</span>
+        </button>
+        <div>
+          <span class="text-xs font-bold text-slate-700 block">Reset Shift / Ganti Hari</span>
+          <span id="hintKunciReset" class="text-[11px] text-slate-400">Hanya digunakan saat ganti shift atau tutup hari</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        id="btnResetUtama"
+        onclick="bukaModalReset()"
+        disabled
+        class="px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shrink-0"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span>Reset Shift / Ganti Hari</span>
+      </button>
+    </section>
+
+  </main>
+
+  <script>
+    // =========================================================================
+    // STATE APLIKASI
+    // =========================================================================
+    const STORAGE_KEY = 'kasir_pos_mini_state_v3';
+
+    let appState = {
+      modalAwal: 0,
+      modalTerkunci: false,
+      totalCashRealTime: 0,
+      totalTransaksiCount: 0,
+      totalCashless: 0,
+      riwayat: []
+    };
+
+    // State UI sementara (reset selalu terkunci saat halaman dibuka)
+    let resetTerkunci = true;
+    let idItemAkanDihapus = null;
+
+    // =========================================================================
+    // INISIALISASI
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      const opsi = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
+      document.getElementById('tanggalHariIni').textContent = new Date().toLocaleDateString('id-ID', opsi);
+
+      muatStateDariStorage();
+      hitungUlangSemuaTotal();
+      renderSemuaTampilan();
+      renderStatusTombolReset();
+    });
+
+    function muatStateDariStorage() {
+      try {
+        // Migrasi otomatis jika ada data dari versi sebelumnya
+        const tersimpan = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('kasir_pos_mini_state_v2');
+        if (tersimpan) {
+          appState = { ...appState, ...JSON.parse(tersimpan) };
+        }
+      } catch (err) {
+        console.error('Gagal memuat data:', err);
+      }
+    }
+
+    function simpanStateKeStorage() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+      } catch (err) {
+        console.error('Gagal menyimpan data:', err);
+      }
+    }
+
+    // =========================================================================
+    // FORMAT ANGKA & RUPIAH
+    // =========================================================================
+    function formatRupiah(angka) {
+      const nilai = Number(angka) || 0;
+      const negatif = nilai < 0 ? '-' : '';
+      return negatif + 'Rp ' + Math.abs(nilai).toLocaleString('id-ID');
+    }
+
+    function formatAngkaRibuan(angka) {
+      const nilai = Number(angka) || 0;
+      return nilai === 0 ? '' : nilai.toLocaleString('id-ID');
+    }
+
+    function formatRibuanInput(inputEl) {
+      const hanyaDigit = inputEl.value.replace(/\D/g, '');
+      if (!hanyaDigit) {
+        inputEl.value = '';
+        if (inputEl.id === 'inputModal') {
+          appState.modalAwal = 0;
+          hitungUlangSemuaTotal();
+          simpanStateKeStorage();
+          renderSemuaTampilan();
+        }
+        return;
+      }
+
+      const angka = parseInt(hanyaDigit, 10);
+      inputEl.value = angka.toLocaleString('id-ID');
+
+      if (inputEl.id === 'inputModal') {
+        appState.modalAwal = angka;
+        hitungUlangSemuaTotal();
+        simpanStateKeStorage();
+        document.getElementById('displayTotalCash').textContent = formatRupiah(appState.totalCashRealTime);
+      }
+    }
+
+    function ambilNilaiAngka(elementId) {
+      const raw = document.getElementById(elementId).value || '';
+      const bersih = raw.replace(/\D/g, '');
+      return bersih ? parseInt(bersih, 10) : 0;
+    }
+
+    // =========================================================================
+    // KALKULASI ULANG DARI RIWAYAT YANG TERSISA
+    // =========================================================================
+    function hitungUlangSemuaTotal() {
+      let totalMasuk = 0;
+      let totalKeluar = 0;
+      let totalCashless = 0;
+
+      appState.riwayat.forEach((item) => {
+        totalMasuk += Number(item.uangMasuk) || 0;
+        totalKeluar += Number(item.uangKeluar) || 0;
+        totalCashless += Number(item.cashless) || 0;
+      });
+
+      appState.totalCashRealTime = (Number(appState.modalAwal) || 0) + totalMasuk - totalKeluar;
+      appState.totalCashless = totalCashless;
+      appState.totalTransaksiCount = appState.riwayat.length;
+    }
+
+    // =========================================================================
+    // MODAL AWAL
+    // =========================================================================
+    function toggleKunciModal() {
+      if (!appState.modalTerkunci) {
+        appState.modalAwal = ambilNilaiAngka('inputModal');
+        appState.modalTerkunci = true;
+        hitungUlangSemuaTotal();
+        tampilkanToast(`Modal awal dikunci (${formatRupiah(appState.modalAwal)})`, 'success');
+      } else {
+        appState.modalTerkunci = false;
+        tampilkanToast('Kunci modal dibuka.', 'info');
+      }
+      simpanStateKeStorage();
+      renderSemuaTampilan();
+    }
+
+    // =========================================================================
+    // SUBMIT TRANSAKSI BARU
+    // =========================================================================
+    function prosesSubmitTransaksi(event) {
+      event.preventDefault();
+
+      const uangMasuk = ambilNilaiAngka('inputUangMasuk');
+      const uangKeluar = ambilNilaiAngka('inputUangKeluar');
+      const cashless = ambilNilaiAngka('inputCashless');
+      const keterangan = document.getElementById('inputKeterangan').value.trim() || '-';
+
+      if (uangMasuk === 0 && uangKeluar === 0 && cashless === 0) {
+        tampilkanToast('Isi minimal satu nominal sebelum Submit.', 'error');
+        document.getElementById('inputUangMasuk').focus();
+        return;
+      }
+
+      if (appState.riwayat.length === 0 && !appState.modalTerkunci) {
+        appState.modalAwal = ambilNilaiAngka('inputModal');
+        appState.modalTerkunci = true;
+      }
+
+      const waktuSekarang = new Date().toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      // Simpan transaksi paling baru di indeks ke-0 (paling atas di tabel)
+      appState.riwayat.unshift({
+        id: Date.now() + Math.random(),
+        waktu: waktuSekarang,
+        keterangan: keterangan,
+        uangMasuk: uangMasuk,
+        uangKeluar: uangKeluar,
+        cashless: cashless
+      });
+
+      hitungUlangSemuaTotal();
+
+      // Kosongkan form input
+      document.getElementById('inputUangMasuk').value = '';
+      document.getElementById('inputUangKeluar').value = '';
+      document.getElementById('inputCashless').value = '';
+      document.getElementById('inputKeterangan').value = '';
+
+      simpanStateKeStorage();
+      renderSemuaTampilan();
+
+      tampilkanToast('Transaksi disimpan & form direset.', 'success');
+      document.getElementById('inputUangMasuk').focus();
+    }
+
+    // =========================================================================
+    // HAPUS RIWAYAT TERTENTU & HAPUS TERAKHIR (UNDO)
+    // =========================================================================
+    function mintaHapusTerakhir() {
+      if (!appState.riwayat || appState.riwayat.length === 0) return;
+      const transaksiTerakhir = appState.riwayat[0];
+      mintaHapusItem(transaksiTerakhir.id, true);
+    }
+
+    function mintaHapusItem(idItem, adalahTerakhir = false) {
+      const indeks = appState.riwayat.findIndex((item) => item.id === idItem);
+      if (indeks === -1) return;
+
+      const target = appState.riwayat[indeks];
+      const nomorTransaksi = appState.riwayat.length - indeks;
+      idItemAkanDihapus = idItem;
+
+      const rincian = [];
+      if (target.uangMasuk > 0) rincian.push(`Masuk ${formatRupiah(target.uangMasuk)}`);
+      if (target.uangKeluar > 0) rincian.push(`Keluar ${formatRupiah(target.uangKeluar)}`);
+      if (target.cashless > 0) rincian.push(`Cashless ${formatRupiah(target.cashless)}`);
+
+      document.getElementById('deleteItemTitle').textContent = adalahTerakhir
+        ? `Batalkan Transaksi Terakhir (#${nomorTransaksi})?`
+        : `Hapus Transaksi #${nomorTransaksi}?`;
+
+      document.getElementById('deleteItemDesc').textContent =
+        `Rincian: ${rincian.join(', ')}. Hanya transaksi ini yang dihapus—saldo cash, cashless, dan jumlah transaksi akan dikoreksi otomatis tanpa mereset data lain.`;
+
+      const modal = document.getElementById('deleteItemModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function tutupModalHapusItem() {
+      idItemAkanDihapus = null;
+      const modal = document.getElementById('deleteItemModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function konfirmasiHapusItem() {
+      if (idItemAkanDihapus === null) return;
+
+      appState.riwayat = appState.riwayat.filter((item) => item.id !== idItemAkanDihapus);
+      hitungUlangSemuaTotal();
+
+      simpanStateKeStorage();
+      renderSemuaTampilan();
+      tutupModalHapusItem();
+      tampilkanToast('Transaksi dihapus & saldo otomatis dikoreksi.', 'info');
+    }
+
+    // =========================================================================
+    // RENDER TAMPILAN
+    // =========================================================================
+    function renderSemuaTampilan() {
+      // 1. Total Uang Real-Time
+      document.getElementById('displayTotalCash').textContent = formatRupiah(appState.totalCashRealTime);
+
+      // 2. Jumlah Transaksi & Jumlah Trx Cashless
+      document.getElementById('displayTotalTrx').textContent = appState.totalTransaksiCount.toLocaleString('id-ID');
+      document.getElementById('displayTotalCashless').textContent = formatRupiah(appState.totalCashless);
+
+      // 3. Modal Awal
+      const inputModal = document.getElementById('inputModal');
+      const btnKunci = document.getElementById('btnKunciModal');
+      const textKunci = document.getElementById('textKunciModal');
+
+      inputModal.value = formatAngkaRibuan(appState.modalAwal);
+      inputModal.disabled = appState.modalTerkunci;
+
+      if (appState.modalTerkunci) {
+        btnKunci.className = 'px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 shrink-0';
+        textKunci.textContent = 'Buka Modal';
+      } else {
+        btnKunci.className = 'px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition bg-slate-800 hover:bg-slate-900 text-white shrink-0';
+        textKunci.textContent = 'Kunci Modal';
+      }
+
+      // 4. Tombol Cepat Hapus Terakhir
+      const btnHapusTerakhir = document.getElementById('btnHapusTerakhir');
+      if (appState.riwayat && appState.riwayat.length > 0) {
+        btnHapusTerakhir.disabled = false;
+        btnHapusTerakhir.className = 'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer';
+      } else {
+        btnHapusTerakhir.disabled = true;
+        btnHapusTerakhir.className = 'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed';
+      }
+
+      // 5. Tabel Riwayat
+      renderTabelRiwayat();
+    }
+
+    function renderTabelRiwayat() {
+      const tbody = document.getElementById('tabelRiwayatBody');
+
+      if (!appState.riwayat || appState.riwayat.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 px-4 text-center text-slate-400 text-xs">
+              Belum ada riwayat transaksi.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      const totalBaris = appState.riwayat.length;
+
+      tbody.innerHTML = appState.riwayat.map((item, idx) => {
+        const nomorUrut = totalBaris - idx;
+        const adalahTerakhir = idx === 0;
+
+        return `
+          <tr class="${adalahTerakhir ? 'bg-indigo-50/40 hover:bg-indigo-50/70' : 'hover:bg-slate-50'} transition">
+            <td class="py-3 px-3 whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span class="font-mono font-bold text-slate-700">#${nomorUrut}</span>
+                ${adalahTerakhir ? '<span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md bg-indigo-100 text-indigo-700">Terakhir</span>' : ''}
+              </div>
+            </td>
+            <td class="py-3 px-3 font-mono text-xs text-slate-500 whitespace-nowrap">${item.waktu}</td>
+            <td class="py-3 px-3 text-slate-700 max-w-[130px] sm:max-w-xs truncate" title="${escapeHTML(item.keterangan)}">${escapeHTML(item.keterangan)}</td>
+            <td class="py-3 px-3 text-right font-mono font-semibold whitespace-nowrap ${item.uangMasuk > 0 ? 'text-emerald-600' : 'text-slate-300'}">
+              ${item.uangMasuk > 0 ? '+' + formatRupiah(item.uangMasuk) : '-'}
+            </td>
+            <td class="py-3 px-3 text-right font-mono font-semibold whitespace-nowrap ${item.uangKeluar > 0 ? 'text-rose-600' : 'text-slate-300'}">
+              ${item.uangKeluar > 0 ? '-' + formatRupiah(item.uangKeluar) : '-'}
+            </td>
+            <td class="py-3 px-3 text-right font-mono font-semibold whitespace-nowrap ${item.cashless > 0 ? 'text-sky-600' : 'text-slate-300'}">
+              ${item.cashless > 0 ? formatRupiah(item.cashless) : '-'}
+            </td>
+            <td class="py-3 px-3 text-center whitespace-nowrap">
+              <button
+                type="button"
+                onclick="mintaHapusItem(${item.id}, ${adalahTerakhir})"
+                title="Hapus transaksi #${nomorUrut}"
+                class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-600 bg-rose-50/70 hover:bg-rose-100 border border-rose-200/80 transition cursor-pointer"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span>Hapus</span>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function escapeHTML(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // =========================================================================
+    // RESET SHIFT / GANTI HARI (TERKUNCI SECARA DEFAULT)
+    // =========================================================================
+    function toggleKunciReset() {
+      resetTerkunci = !resetTerkunci;
+      renderStatusTombolReset();
+    }
+
+    function renderStatusTombolReset() {
+      const btnToggle = document.getElementById('btnToggleKunciReset');
+      const textToggle = document.getElementById('textKunciReset');
+      const iconToggle = document.getElementById('iconKunciReset');
+      const hintToggle = document.getElementById('hintKunciReset');
+      const btnReset = document.getElementById('btnResetUtama');
+
+      if (resetTerkunci) {
+        btnToggle.className = 'px-3.5 py-2.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300 shrink-0';
+        textToggle.textContent = 'Terkunci';
+        iconToggle.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />';
+        hintToggle.textContent = 'Hanya digunakan saat ganti shift atau tutup hari';
+
+        btnReset.disabled = true;
+        btnReset.className = 'px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shrink-0';
+      } else {
+        btnToggle.className = 'px-3.5 py-2.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 shrink-0';
+        textToggle.textContent = 'Kunci Kembali';
+        iconToggle.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />';
+        hintToggle.textContent = 'Tombol reset shift aktif';
+
+        btnReset.disabled = false;
+        btnReset.className = 'px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer shrink-0';
+      }
+    }
+
+    function bukaModalReset() {
+      if (resetTerkunci) return;
+      const modal = document.getElementById('resetModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function tutupModalReset() {
+      const modal = document.getElementById('resetModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function konfirmasiResetHarian() {
+      appState = {
+        modalAwal: 0,
+        modalTerkunci: false,
+        totalCashRealTime: 0,
+        totalTransaksiCount: 0,
+        totalCashless: 0,
+        riwayat: []
+      };
+
+      document.getElementById('inputUangMasuk').value = '';
+      document.getElementById('inputUangKeluar').value = '';
+      document.getElementById('inputCashless').value = '';
+      document.getElementById('inputKeterangan').value = '';
+
+      // Kembalikan gembok reset ke posisi terkunci
+      resetTerkunci = true;
+      renderStatusTombolReset();
+
+      simpanStateKeStorage();
+      renderSemuaTampilan();
+      tutupModalReset();
+      tampilkanToast('Data shift berhasil direset ke 0.', 'success');
+    }
+
+    // =========================================================================
+    // EXPORT CSV
+    // =========================================================================
+    function eksporCSV() {
+      if (appState.riwayat.length === 0) {
+        tampilkanToast('Belum ada data untuk diekspor.', 'error');
+        return;
+      }
+
+      const barisCSV = [];
+      barisCSV.push(['LAPORAN KASIR POS']);
+      barisCSV.push(['Modal Awal', appState.modalAwal]);
+      barisCSV.push(['Total Uang Real-Time', appState.totalCashRealTime]);
+      barisCSV.push(['Jumlah Transaksi', appState.totalTransaksiCount]);
+      barisCSV.push(['Jumlah Trx Cashless', appState.totalCashless]);
+      barisCSV.push([]);
+      barisCSV.push(['No', 'Waktu', 'Keterangan', 'Uang Masuk', 'Uang Keluar', 'Cashless']);
+
+      const urutKronologis = [...appState.riwayat].reverse();
+      urutKronologis.forEach((item, idx) => {
+        barisCSV.push([
+          idx + 1,
+          item.waktu,
+          `"${item.keterangan.replace(/"/g, '""')}"`,
+          item.uangMasuk,
+          item.uangKeluar,
+          item.cashless
+        ]);
+      });
+
+      const kontenCSV = barisCSV.map(row => row.join(',')).join('\n');
+      const blob = new Blob([kontenCSV], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const tanggalFile = new Date().toISOString().slice(0, 10);
+
+      link.setAttribute('href', url);
+      link.setAttribute('download', `kasir-shift-${tanggalFile}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      tampilkanToast('File CSV berhasil diunduh.', 'success');
+    }
+
+    // =========================================================================
+    // TOAST NOTIFIKASI
+    // =========================================================================
+    function tampilkanToast(pesan, tipe = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+
+      const warnaMap = {
+        success: 'bg-emerald-600 text-white border-emerald-700',
+        error: 'bg-rose-600 text-white border-rose-700',
+        info: 'bg-slate-800 text-white border-slate-900'
+      };
+
+      toast.className = `pointer-events-auto px-3.5 py-2.5 rounded-xl shadow-lg border text-xs font-medium flex items-center justify-between gap-2 transition-all duration-300 ${warnaMap[tipe] || warnaMap.info}`;
+      toast.innerHTML = `
+        <span>${escapeHTML(pesan)}</span>
+        <button type="button" onclick="this.parentElement.remove()" class="text-white/80 hover:text-white font-bold">&times;</button>
+      `;
+
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
+```
